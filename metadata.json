@@ -1,0 +1,7 @@
+{
+  "name": "WikiAtlas",
+  "description": "A professional knowledge article platform featuring automatic reading time, animated live counters, rich text editing with auto-save, and full community collaboration hubs.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
