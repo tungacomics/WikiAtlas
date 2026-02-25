@@ -1,0 +1,9 @@
+/* WikiAtlas Global Styles */
+:root {
+  --brand-500: #22C55E;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+}

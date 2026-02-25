@@ -129,16 +129,24 @@ app.get("/api/articles", async (req, res) => {
       .select('*, profiles(username)')
       .order('created_at', { ascending: false });
 
-    // If join fails (e.g. profiles table missing or relation error), fallback to simple select
+    // If join fails (e.g. profiles table missing or relation error), fallback to manual join
     if (error) {
-      console.warn("Join with profiles failed, falling back to simple select:", error.message);
-      const fallback = await supabase
+      console.warn("Join with profiles failed, falling back to manual join:", error.message);
+      const { data: articles, error: artError } = await supabase
         .from('articles')
         .select('*')
         .order('created_at', { ascending: false });
       
-      if (fallback.error) throw fallback.error;
-      data = fallback.data;
+      if (artError) throw artError;
+      
+      // Fetch all profiles to join manually
+      const { data: profiles } = await supabase.from('profiles').select('id, username');
+      const profileMap = new Map((profiles || []).map(p => [p.id, p.username]));
+      
+      data = (articles || []).map(art => ({
+        ...art,
+        profiles: { username: profileMap.get(art.author_id || art.user_id) }
+      }));
     }
 
     if (!data) return res.json([]);
@@ -288,15 +296,22 @@ app.get("/api/articles/:id", async (req, res) => {
       .single();
 
     if (artError) {
-      console.warn("Single article join failed, falling back:", artError.message);
-      const fallback = await supabase
+      console.warn("Single article join failed, falling back to manual join:", artError.message);
+      const { data: art, error: fallbackError } = await supabase
         .from('articles')
         .select('*')
         .eq('id', req.params.id)
         .single();
       
-      if (fallback.error) throw fallback.error;
-      article = fallback.data;
+      if (fallbackError) throw fallbackError;
+      
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('username')
+        .eq('id', art.author_id || art.user_id)
+        .single();
+        
+      article = { ...art, profiles: profile || { username: 'Noma\'lum muallif' } };
     }
 
     const formattedArticle = {
@@ -304,11 +319,33 @@ app.get("/api/articles/:id", async (req, res) => {
       author_name: article.profiles?.username || 'Noma\'lum muallif'
     };
 
-    const { data: comments } = await supabase
+    let { data: comments, error: commError } = await supabase
       .from('comments')
       .select('*, profiles(username)')
       .eq('article_id', req.params.id)
       .order('created_at', { ascending: true });
+
+    if (commError) {
+      console.warn("Comments join failed, falling back to manual join:", commError.message);
+      const { data: comms, error: fallbackCommError } = await supabase
+        .from('comments')
+        .select('*')
+        .eq('article_id', req.params.id)
+        .order('created_at', { ascending: true });
+        
+      if (!fallbackCommError && comms) {
+        const userIds = [...new Set(comms.map((c: any) => c.author_id))];
+        const { data: profiles } = await supabase.from('profiles').select('id, username').in('id', userIds);
+        const profileMap = new Map((profiles || []).map(p => [p.id, p.username]));
+        
+        comments = comms.map((c: any) => ({
+          ...c,
+          profiles: { username: profileMap.get(c.author_id) }
+        }));
+      } else {
+        comments = [];
+      }
+    }
 
     const formattedComments = (comments || []).map((c: any) => ({
       ...c,
