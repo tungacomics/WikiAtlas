@@ -123,31 +123,22 @@ app.post("/api/auth/logout", (req, res) => {
 
 app.get("/api/articles", async (req, res) => {
   try {
-    // Try to fetch with profiles join first
-    let { data, error } = await supabase
+    // Fetch articles and profiles separately to avoid schema relationship errors
+    const { data: articles, error: artError } = await supabase
       .from('articles')
-      .select('*, profiles(username)')
+      .select('*')
       .order('created_at', { ascending: false });
-
-    // If join fails (e.g. profiles table missing or relation error), fallback to manual join
-    if (error) {
-      console.warn("Join with profiles failed, falling back to manual join:", error.message);
-      const { data: articles, error: artError } = await supabase
-        .from('articles')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      if (artError) throw artError;
-      
-      // Fetch all profiles to join manually
-      const { data: profiles } = await supabase.from('profiles').select('id, username');
-      const profileMap = new Map((profiles || []).map(p => [p.id, p.username]));
-      
-      data = (articles || []).map(art => ({
-        ...art,
-        profiles: { username: profileMap.get(art.author_id || art.user_id) }
-      }));
-    }
+    
+    if (artError) throw artError;
+    
+    // Fetch all profiles to join manually
+    const { data: profiles } = await supabase.from('profiles').select('id, username');
+    const profileMap = new Map((profiles || []).map(p => [p.id, p.username]));
+    
+    const data = (articles || []).map(art => ({
+      ...art,
+      profiles: { username: profileMap.get(art.author_id || art.user_id) }
+    }));
 
     if (!data) return res.json([]);
     
@@ -289,62 +280,47 @@ app.put("/api/articles/:id", authenticateToken, async (req: any, res) => {
 
 app.get("/api/articles/:id", async (req, res) => {
   try {
-    let { data: article, error: artError } = await supabase
+    // Fetch article and profile separately to avoid schema relationship errors
+    const { data: art, error: artError } = await supabase
       .from('articles')
-      .select('*, profiles(username)')
+      .select('*')
       .eq('id', req.params.id)
       .single();
 
-    if (artError) {
-      console.warn("Single article join failed, falling back to manual join:", artError.message);
-      const { data: art, error: fallbackError } = await supabase
-        .from('articles')
-        .select('*')
-        .eq('id', req.params.id)
-        .single();
+    if (artError) throw artError;
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('username')
+      .eq('id', art.author_id || art.user_id)
+      .single();
       
-      if (fallbackError) throw fallbackError;
-      
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('username')
-        .eq('id', art.author_id || art.user_id)
-        .single();
-        
-      article = { ...art, profiles: profile || { username: 'Noma\'lum muallif' } };
-    }
+    const article = { ...art, profiles: profile || { username: 'Noma\'lum muallif' } };
 
     const formattedArticle = {
       ...article,
       author_name: article.profiles?.username || 'Noma\'lum muallif'
     };
 
-    let { data: comments, error: commError } = await supabase
+    // Fetch comments and profiles separately to avoid schema relationship errors
+    const { data: comms, error: commError } = await supabase
       .from('comments')
-      .select('*, profiles(username)')
+      .select('*')
       .eq('article_id', req.params.id)
       .order('created_at', { ascending: true });
 
-    if (commError) {
-      console.warn("Comments join failed, falling back to manual join:", commError.message);
-      const { data: comms, error: fallbackCommError } = await supabase
-        .from('comments')
-        .select('*')
-        .eq('article_id', req.params.id)
-        .order('created_at', { ascending: true });
-        
-      if (!fallbackCommError && comms) {
-        const userIds = [...new Set(comms.map((c: any) => c.author_id))];
-        const { data: profiles } = await supabase.from('profiles').select('id, username').in('id', userIds);
-        const profileMap = new Map((profiles || []).map(p => [p.id, p.username]));
-        
-        comments = comms.map((c: any) => ({
-          ...c,
-          profiles: { username: profileMap.get(c.author_id) }
-        }));
-      } else {
-        comments = [];
-      }
+    if (commError) throw commError;
+
+    let comments = [];
+    if (comms && comms.length > 0) {
+      const userIds = [...new Set(comms.map((c: any) => c.author_id))];
+      const { data: profiles } = await supabase.from('profiles').select('id, username').in('id', userIds);
+      const profileMap = new Map((profiles || []).map(p => [p.id, p.username]));
+      
+      comments = comms.map((c: any) => ({
+        ...c,
+        profiles: { username: profileMap.get(c.author_id) }
+      }));
     }
 
     const formattedComments = (comments || []).map((c: any) => ({
