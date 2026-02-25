@@ -5,7 +5,7 @@ import { Article, Profile, Community, ArticleCategory } from '../types';
 import { suggestSemanticMatches } from './gemini';
 
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: process.env.VITE_API_URL || '/api',
   withCredentials: true
 });
 
