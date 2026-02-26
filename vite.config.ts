@@ -19,6 +19,16 @@ export default defineConfig(({ mode }) => {
       build: {
         outDir: 'dist',
         emptyOutDir: true,
+        rollupOptions: {
+          output: {
+            manualChunks: {
+              'vendor-react': ['react', 'react-dom'],
+              'vendor-ai': ['@google/genai'],
+              'vendor-viz': ['mermaid', 'katex'],
+              'vendor-motion': ['motion'],
+            }
+          }
+        }
       },
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),

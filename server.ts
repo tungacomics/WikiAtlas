@@ -34,6 +34,19 @@ app.use(cors());
 app.use(express.json());
 app.use(cookieParser());
 
+// Health check route
+app.get("/api/health", (req, res) => {
+  res.json({
+    status: "ok",
+    env: {
+      supabase: !!process.env.SUPABASE_URL,
+      gemini: !!process.env.GEMINI_API_KEY,
+      node_env: process.env.NODE_ENV,
+      vercel: !!process.env.VERCEL
+    }
+  });
+});
+
 // Middleware to verify JWT
 const authenticateToken = (req: any, res: any, next: any) => {
   const token = req.cookies.token;
