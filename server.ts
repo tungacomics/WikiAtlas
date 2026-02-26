@@ -1,5 +1,4 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import cors from "cors";
 import axios from "axios";
 import bcrypt from "bcryptjs";
@@ -21,7 +20,13 @@ const PORT = 3000;
 // Supabase Setup
 const SUPABASE_URL = process.env.SUPABASE_URL || "";
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+let supabase: any = null;
+if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
+  supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+} else {
+  console.warn("Supabase credentials missing. API routes relying on Supabase will fail.");
+}
 
 const JWT_SECRET = process.env.JWT_SECRET || "my_wikiatlas_private_jwt_secret_key_098765412728";
 
@@ -486,6 +491,7 @@ app.post("/api/admin/cleanup", authenticateToken, async (req: any, res) => {
 
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -505,21 +511,26 @@ async function startServer() {
 
 // --- Cleanup and Maintenance ---
 
-app.listen(PORT, "0.0.0.0", async () => {
+export default app;
+
+if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
+  app.listen(PORT, "0.0.0.0", async () => {
     console.log(`Server running on http://localhost:${PORT}`);
     
     // One-time cleanup of garbage articles on startup
     try {
-      const { data: articles } = await supabase.from('articles').select('id, title, content');
-      if (articles) {
-        const toDelete = articles.filter((a: any) => {
-          const isRandom = (str: string) => /^[asdfghjklqwertyuiopzxcvbnm\s]{10,}$/i.test(str) && !str.includes(' ');
-          return isRandom(a.title || '') || (a.content && a.content.length < 10);
-        }).map((a: any) => a.id);
-        
-        if (toDelete.length > 0) {
-          console.log(`Cleaning up ${toDelete.length} garbage articles...`);
-          await supabase.from('articles').delete().in('id', toDelete);
+      if (supabase) {
+        const { data: articles } = await supabase.from('articles').select('id, title, content');
+        if (articles) {
+          const toDelete = articles.filter((a: any) => {
+            const isRandom = (str: string) => /^[asdfghjklqwertyuiopzxcvbnm\s]{10,}$/i.test(str) && !str.includes(' ');
+            return isRandom(a.title || '') || (a.content && a.content.length < 10);
+          }).map((a: any) => a.id);
+          
+          if (toDelete.length > 0) {
+            console.log(`Cleaning up ${toDelete.length} garbage articles...`);
+            await supabase.from('articles').delete().in('id', toDelete);
+          }
         }
       }
     } catch (e) {
@@ -527,8 +538,5 @@ app.listen(PORT, "0.0.0.0", async () => {
     }
   });
 
-export default app;
-
-if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
   startServer();
 }

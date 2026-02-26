@@ -1,5 +1,5 @@
 
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Modality } from "@google/genai";
 import { Article } from "../types";
 
 // Safe initialization of GoogleGenAI to prevent white screen if API key is missing
@@ -186,7 +186,6 @@ export const generateSpeech = async (text: string): Promise<string | undefined> 
   if (!text) return undefined;
   
   try {
-    const { Modality } = await import("@google/genai");
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
       contents: [{ parts: [{ text: `O'zbek tilida ravon va tushunarli qilib o'qib bering: ${text.substring(0, 1000)}` }] }],
