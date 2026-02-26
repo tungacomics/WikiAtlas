@@ -2,15 +2,24 @@
 import { GoogleGenAI } from "@google/genai";
 import { Article } from "../types";
 
-// Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); as per strictly defined guidelines
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Safe initialization of GoogleGenAI to prevent white screen if API key is missing
+const getAi = () => {
+  const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    console.warn("GEMINI_API_KEY is missing. AI features will be disabled.");
+    return null;
+  }
+  return new GoogleGenAI({ apiKey });
+};
+
+const ai = getAi();
 
 /**
  * Intelligent Semantic Search
  * Analyzes query intent and ranks available articles by conceptual relevance.
  */
 export const suggestSemanticMatches = async (query: string, articles: Article[]): Promise<string[]> => {
-  if (!query || articles.length === 0) return [];
+  if (!query || articles.length === 0 || !ai) return [];
 
   try {
     const articleMetadata = articles.map(a => `ID:${a.id} | Title:${a.title} | Excerpt:${a.excerpt.substring(0, 100)}`).join('\n');

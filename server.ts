@@ -454,30 +454,9 @@ app.delete("/api/articles/:id", authenticateToken, async (req: any, res) => {
   }
 });
 
-// --- Vite Integration ---
-
-async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    app.use(express.static(path.join(__dirname, "dist")));
-    // SPA fallback: barcha yo'nalishlarni index.html-ga yo'naltirish
-    app.get("*", (req, res, next) => {
-      if (req.path.startsWith("/api")) return next();
-      res.sendFile(path.join(__dirname, "dist", "index.html"));
-    });
-  }
-
-  // --- Cleanup and Maintenance ---
+// --- Cleanup and Maintenance ---
 app.post("/api/admin/cleanup", authenticateToken, async (req: any, res) => {
-  // Simple check for admin-like behavior or just allow for this task
   try {
-    // Delete articles with very short content or random-looking titles
-    // This is a heuristic based on user request "garbage letters"
     const { data: garbage, error: fetchError } = await supabase
       .from('articles')
       .select('id, title, content');
@@ -503,6 +482,29 @@ app.post("/api/admin/cleanup", authenticateToken, async (req: any, res) => {
   }
 });
 
+// --- Vite Integration ---
+
+async function startServer() {
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(__dirname, "dist");
+    app.use(express.static(distPath));
+    
+    // SPA fallback: barcha yo'nalishlarni index.html-ga yo'naltirish
+    app.get("*", (req, res, next) => {
+      if (req.path.startsWith("/api")) return next();
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
+}
+
+// --- Cleanup and Maintenance ---
+
 app.listen(PORT, "0.0.0.0", async () => {
     console.log(`Server running on http://localhost:${PORT}`);
     
@@ -526,4 +528,8 @@ app.listen(PORT, "0.0.0.0", async () => {
   });
 }
 
-startServer();
+export default app;
+
+if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
+  startServer();
+}
