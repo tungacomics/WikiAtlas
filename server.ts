@@ -526,7 +526,6 @@ app.listen(PORT, "0.0.0.0", async () => {
       console.error("Startup cleanup failed:", e);
     }
   });
-}
 
 export default app;
 
