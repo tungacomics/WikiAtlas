@@ -1,11 +1,11 @@
 
 import axios from 'axios';
-import { Article, Profile, Community, ArticleCategory } from '../types';
+import { Article, Profile, Community, ArticleCategory, ArticleComment } from '../types';
 
 import { suggestSemanticMatches } from './gemini';
 
 const api = axios.create({
-  baseURL: process.env.VITE_API_URL || '/api',
+  baseURL: '/api',
   withCredentials: true
 });
 
@@ -41,7 +41,15 @@ export const calculateReadingTime = (content: string): number => {
 export const getArticles = async (): Promise<Article[]> => {
   try {
     const response = await api.get('/articles');
-    const data = response.data.map((row: any) => ({
+    
+    // Ensure response.data is an array before mapping
+    const rawData = Array.isArray(response.data) ? response.data : [];
+    
+    if (!Array.isArray(response.data)) {
+      console.error("API did not return an array for articles:", response.data);
+    }
+
+    const data = rawData.map((row: any) => ({
       ...row,
       excerpt: row.content ? row.content.substring(0, 150) + '...' : '',
       reading_time: calculateReadingTime(row.content || '')
@@ -155,6 +163,11 @@ export const deleteArticle = async (id: string): Promise<void> => {
     const serverMessage = err.response?.data?.error || "Maqolani o'chirishda xatolik.";
     throw new Error(serverMessage);
   }
+};
+
+export const addComment = async (articleId: string, content: string): Promise<ArticleComment> => {
+  const response = await api.post(`/articles/${articleId}/comments`, { content });
+  return response.data;
 };
 
 export const getProfile = async (userId: string): Promise<Profile | null> => {

@@ -7,6 +7,11 @@ import jwt from "jsonwebtoken";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import { createClient } from "@supabase/supabase-js";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
@@ -129,15 +134,27 @@ app.get("/api/articles", async (req, res) => {
       .select('*')
       .order('created_at', { ascending: false });
     
-    if (artError) throw artError;
+    if (artError) {
+      console.error("Supabase articles fetch error:", artError);
+      throw artError;
+    }
     
     // Fetch all profiles to join manually
-    const { data: profiles } = await supabase.from('profiles').select('id, username');
-    const profileMap = new Map((profiles || []).map(p => [p.id, p.username]));
+    let profileMap = new Map();
+    try {
+      const { data: profiles, error: profError } = await supabase.from('profiles').select('id, username');
+      if (profError) {
+        console.warn("Profiles table might be missing or inaccessible:", profError.message);
+      } else {
+        profileMap = new Map((profiles || []).map(p => [p.id, p.username]));
+      }
+    } catch (e) {
+      console.error("Error fetching profiles:", e);
+    }
     
     const data = (articles || []).map(art => ({
       ...art,
-      profiles: { username: profileMap.get(art.author_id || art.user_id) }
+      profiles: { username: profileMap.get(art.author_id || art.user_id) || 'Muallif' }
     }));
 
     if (!data) return res.json([]);
@@ -191,13 +208,20 @@ app.post("/api/articles", authenticateToken, async (req: any, res) => {
       .single();
 
     if (error) {
-      // If a specific column is missing, try to insert without it
-      if (error.message?.includes("column") && error.message?.includes("not found")) {
-        const missingColumn = error.message.match(/'([^']+)'/)?.[1];
+      // Ustun topilmaganligi haqidagi har qanday xatolikni tutish (turli tillarda bo'lishi mumkin)
+      const isColumnError = error.message?.toLowerCase().includes("column") || 
+                            error.message?.toLowerCase().includes("ustun") ||
+                            error.code === '42703';
+
+      if (isColumnError) {
+        const missingColumn = error.message.match(/'([^']+)'/)?.[1] || 
+                             error.message.match(/"([^"]+)"/)?.[1];
+        
         if (missingColumn && insertData[missingColumn]) {
           console.warn(`Missing column detected: ${missingColumn}. Retrying without it.`);
-          delete insertData[missingColumn];
-          const retry = await supabase.from('articles').insert([insertData]).select().single();
+          const newData = { ...insertData };
+          delete newData[missingColumn];
+          const retry = await supabase.from('articles').insert([newData]).select().single();
           if (retry.error) throw retry.error;
           return res.json(retry.data);
         }
@@ -258,13 +282,20 @@ app.put("/api/articles/:id", authenticateToken, async (req: any, res) => {
       .single();
 
     if (error) {
-      // If a specific column is missing, try to update without it
-      if (error.message?.includes("column") && error.message?.includes("not found")) {
-        const missingColumn = error.message.match(/'([^']+)'/)?.[1];
+      // Ustun topilmaganligi haqidagi har qanday xatolikni tutish
+      const isColumnError = error.message?.toLowerCase().includes("column") || 
+                            error.message?.toLowerCase().includes("ustun") ||
+                            error.code === '42703';
+
+      if (isColumnError) {
+        const missingColumn = error.message.match(/'([^']+)'/)?.[1] || 
+                             error.message.match(/"([^"]+)"/)?.[1];
+                             
         if (missingColumn && updateData[missingColumn]) {
           console.warn(`Missing column detected during update: ${missingColumn}. Retrying without it.`);
-          delete updateData[missingColumn];
-          const retry = await supabase.from('articles').update(updateData).eq('id', req.params.id).select().single();
+          const newData = { ...updateData };
+          delete newData[missingColumn];
+          const retry = await supabase.from('articles').update(newData).eq('id', req.params.id).select().single();
           if (retry.error) throw retry.error;
           return res.json(retry.data);
         }
@@ -433,7 +464,12 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static("dist"));
+    app.use(express.static(path.join(__dirname, "dist")));
+    // SPA fallback: barcha yo'nalishlarni index.html-ga yo'naltirish
+    app.get("*", (req, res, next) => {
+      if (req.path.startsWith("/api")) return next();
+      res.sendFile(path.join(__dirname, "dist", "index.html"));
+    });
   }
 
   // --- Cleanup and Maintenance ---

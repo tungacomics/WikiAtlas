@@ -61,12 +61,12 @@ export interface Community {
   visibility: 'public' | 'private' | 'invite';
 }
 
-export interface Comment {
+export interface ArticleComment {
   id: string;
   article_id: string;
-  user_id: string;
-  author_email: string;
-  text: string;
+  author_id: string;
+  author_name?: string;
+  content: string;
   created_at: string;
   is_flagged?: boolean;
 }

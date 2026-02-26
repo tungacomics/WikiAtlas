@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Article, Comment } from '../types';
-import { getArticleById, getRelatedArticles, deleteArticle } from '../services/store';
+import { Article, ArticleComment } from '../types';
+import { getArticleById, getRelatedArticles, deleteArticle, addComment } from '../services/store';
 import { Icons } from '../components/Icon';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { useAuth } from '../context/AuthContext';
@@ -9,8 +9,10 @@ import { generateSpeech } from '../services/gemini';
 
 export const ArticlePage = ({ id, onNavigate }: { id: string, onNavigate: (r: any) => void }) => {
   const { user } = useAuth();
-  const [article, setArticle] = useState<Article | undefined>();
+  const [article, setArticle] = useState<(Article & { comments?: ArticleComment[] }) | undefined>();
   const [related, setRelated] = useState<Article[]>([]);
+  const [commentText, setCommentText] = useState('');
+  const [isCommenting, setIsCommenting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [scrollProgress, setScrollProgress] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -101,6 +103,7 @@ export const ArticlePage = ({ id, onNavigate }: { id: string, onNavigate: (r: an
   };
 
   const handleShare = async () => {
+    if (!article) return;
     if (navigator.share) {
       try {
         await navigator.share({
@@ -116,6 +119,29 @@ export const ArticlePage = ({ id, onNavigate }: { id: string, onNavigate: (r: an
     } else {
       navigator.clipboard.writeText(window.location.href);
       alert("Havola nusxalandi!");
+    }
+  };
+
+  const handleComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) {
+      onNavigate({ name: 'auth' });
+      return;
+    }
+    if (!commentText.trim()) return;
+
+    setIsCommenting(true);
+    try {
+      const newComment = await addComment(id, commentText);
+      setArticle(prev => prev ? {
+        ...prev,
+        comments: [...(prev.comments || []), { ...newComment, author_name: user.username || user.email.split('@')[0] }]
+      } : prev);
+      setCommentText('');
+    } catch (e: any) {
+      alert("Fikr qoldirishda xatolik: " + e.message);
+    } finally {
+      setIsCommenting(false);
     }
   };
 
@@ -156,13 +182,13 @@ export const ArticlePage = ({ id, onNavigate }: { id: string, onNavigate: (r: an
 
           <div className="flex flex-wrap items-center justify-between gap-6 pt-4 border-b border-gray-100 pb-8">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-full bg-gray-900 flex items-center justify-center text-white font-bold text-lg">
-                {article.author_email?.charAt(0).toUpperCase()}
+              <div className="w-12 h-12 rounded-full bg-gray-900 flex items-center justify-center text-white font-bold text-lg overflow-hidden">
+                {article.author_name?.charAt(0).toUpperCase() || article.author_email?.charAt(0).toUpperCase()}
               </div>
               <div>
                 <div className="flex items-center gap-1.5">
                   <span className="text-sm font-bold text-gray-900">
-                    {article.author_email?.split('@')[0]}
+                    {article.author_name || article.author_email?.split('@')[0]}
                   </span>
                   <Icons.CheckCircle className="w-3.5 h-3.5 text-emerald-500 fill-emerald-50" />
                 </div>
@@ -272,6 +298,61 @@ export const ArticlePage = ({ id, onNavigate }: { id: string, onNavigate: (r: an
             </div>
           </div>
         </div>
+
+        {/* Comments Section */}
+        <section className="mt-24 pt-12 border-t border-gray-100">
+          <h3 className="text-2xl font-black text-gray-900 uppercase tracking-tight mb-8 flex items-center gap-3">
+            <Icons.MessageSquare className="w-6 h-6 text-brand-500" /> Fikrlar ({article.comments?.length || 0})
+          </h3>
+
+          {/* Comment Form */}
+          <form onSubmit={handleComment} className="mb-12">
+            <div className="p-6 bg-gray-50 rounded-3xl border border-gray-100">
+              <textarea
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                placeholder={user ? "Fikringizni yozing..." : "Fikr qoldirish uchun tizimga kiring"}
+                disabled={!user || isCommenting}
+                className="w-full bg-transparent border-none focus:ring-0 text-gray-900 placeholder:text-gray-400 resize-none min-h-[100px]"
+              />
+              <div className="flex justify-end mt-4">
+                <button
+                  type="submit"
+                  disabled={!user || isCommenting || !commentText.trim()}
+                  className="px-8 py-3 bg-gray-900 text-white font-bold uppercase text-[10px] tracking-widest rounded-xl hover:bg-brand-600 transition-all disabled:opacity-50 disabled:hover:bg-gray-900"
+                >
+                  {isCommenting ? 'Yuborilmoqda...' : 'Yuborish'}
+                </button>
+              </div>
+            </div>
+          </form>
+
+          {/* Comment List */}
+          <div className="space-y-8">
+            {article.comments && article.comments.length > 0 ? (
+              article.comments.map((comment) => (
+                <div key={comment.id} className="flex gap-4">
+                  <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 font-bold text-sm shrink-0">
+                    {comment.author_name?.charAt(0).toUpperCase() || '?'}
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-gray-900">{comment.author_name}</span>
+                      <span className="text-[10px] font-medium text-gray-400 uppercase tracking-widest">
+                        {new Date(comment.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <p className="text-gray-700 leading-relaxed">{comment.content}</p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-12 bg-gray-50 rounded-3xl border border-dashed border-gray-200">
+                <p className="text-gray-400 font-medium">Hozircha fikrlar yo'q. Birinchi bo'lib fikr qoldiring!</p>
+              </div>
+            )}
+          </div>
+        </section>
 
         {/* Footer */}
         <footer className="mt-24 pt-12 border-t border-gray-100">
